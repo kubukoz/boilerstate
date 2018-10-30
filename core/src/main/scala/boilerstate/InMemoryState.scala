@@ -41,17 +41,15 @@ trait CreateState[F[_], K, V] {
 object CreateState {
   implicit def createStateForMonadState[F[_], K, V](implicit F: MonadState[F, Map[K, V]]): CreateState[F, K, V] =
     new CreateState[F, K, V] {
-      private implicit val M: Monad[F] = F.monad
-
       private def insert(key: K, value: V): Map[K, V] => Map[K, V] = _ + (key -> value)
 
       override def withKey(key: K, value: V): F[Unit] = F.modify(insert(key, value))
 
       override def withCalcKey(calcKey: K => K)(value: V)(implicit K: Monoid[K], O: Order[K]): F[Unit] = {
-        for {
-          nextKey <- F.inspect(_.keys.toStream.maximumOption.foldMap(calcKey))
-          _       <- F.modify(insert(nextKey, value))
-        } yield ()
+        F.modify { old =>
+          val nextKey = old.keys.toStream.maximumOption.foldMap(calcKey)
+          insert(nextKey, value)(old)
+        }
       }
     }
 }

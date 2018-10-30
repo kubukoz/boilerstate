@@ -3,6 +3,7 @@ package boilerstate
 import boilerstate.IMSProgram.ProgState
 import cats.Applicative
 import cats.data.StateT
+import cats.effect.concurrent.Ref
 import cats.effect.{ExitCode, IO, IOApp, SyncConsole}
 import cats.implicits._
 import cats.mtl.implicits._
@@ -10,12 +11,19 @@ import cats.mtl.implicits._
 object Demo extends IOApp {
   override def run(args: List[String]): IO[ExitCode] = {
 
-    type S[A] = StateT[IO, Map[Int, String], A]
+    type S[A] = IO[A]
 
-    val cons             = new SyncConsole[S]
-    val md: MyProgram[S] = new IMSProgram[S]
+    val cons = new SyncConsole[S]
 
-    md.execute.map(_.toString).flatMap(cons.putStrLn).runA(Map.empty)
+    Ref[IO].of(Map.empty[Int, String]).flatMap {
+      import com.olegpy.meow.effects._
+
+      _.runState { implicit M =>
+        val md: MyProgram[S] = new IMSProgram[S]
+
+        md.execute.map(_.toString).flatMap(cons.putStrLn)
+      }
+    }
   }.as(ExitCode.Success)
 }
 
