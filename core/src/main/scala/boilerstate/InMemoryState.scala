@@ -3,7 +3,7 @@ package boilerstate
 import cats.implicits._
 import cats.kernel.Monoid
 import cats.mtl.{ApplicativeAsk, MonadState}
-import cats.{Functor, Monad, Order}
+import cats.{Functor, Order}
 
 //lots of todos
 trait InMemoryState[F[_], K, V] {
@@ -35,7 +35,7 @@ object InMemoryState {
 
 trait CreateState[F[_], K, V] {
   def withKey(key: K, value: V): F[Unit]
-  def withCalcKey(calcKey: K => K)(value: V)(implicit K: Monoid[K], O: Order[K]): F[Unit]
+  def withCalcKey(calcKey: K => K)(value: V)(implicit K: Monoid[K], O: Order[K]): F[K]
 }
 
 object CreateState {
@@ -45,7 +45,7 @@ object CreateState {
 
       override def withKey(key: K, value: V): F[Unit] = F.modify(insert(key, value))
 
-      override def withCalcKey(calcKey: K => K)(value: V)(implicit K: Monoid[K], O: Order[K]): F[Unit] = {
+      override def withCalcKey(calcKey: K => K)(value: V)(implicit K: Monoid[K], O: Order[K]): F[K] = {
         F.modify { old =>
           val nextKey = old.keys.toStream.maximumOption.foldMap(calcKey)
           insert(nextKey, value)(old)
@@ -56,13 +56,15 @@ object CreateState {
 
 trait ReadState[F[_], K, V] {
   def all: F[List[V]]
+  def byKey(k: K): F[Option[V]]
 }
 
 object ReadState {
   implicit def readStateForApplicativeAsk[F[_]: Functor, K, V](
     implicit F: ApplicativeAsk[F, Map[K, V]]): ReadState[F, K, V] =
     new ReadState[F, K, V] {
-      override def all: F[List[V]] = F.ask.map(_.values.toList)
+      override val all: F[List[V]]           = F.reader(_.values.toList)
+      override def byKey(k: K): F[Option[V]] = F.reader(_.get(k))
     }
 }
 

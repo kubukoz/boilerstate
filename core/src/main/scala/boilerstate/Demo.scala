@@ -1,10 +1,9 @@
 package boilerstate
 
 import boilerstate.IMSProgram.ProgState
-import cats.Applicative
-import cats.data.StateT
+import cats.{Applicative, Monad}
 import cats.effect.concurrent.Ref
-import cats.effect.{ExitCode, IO, IOApp, SyncConsole}
+import cats.effect._
 import cats.implicits._
 import cats.mtl.implicits._
 
@@ -13,28 +12,28 @@ object Demo extends IOApp {
 
     type S[A] = IO[A]
 
-    val cons = new SyncConsole[S]
+    implicit val cons = SyncConsole.stdio[S]
 
-    Ref[IO].of(Map.empty[Int, String]).flatMap {
+    Ref[IO].of(Map.empty[Int, String]).flatMap { ref =>
       import com.olegpy.meow.effects._
+      implicit val MS = ref.stateInstance
 
-      _.runState { implicit M =>
-        val md: MyProgram[S] = new IMSProgram[S]
+      val md: MyProgram[S] = new IMSProgram[S]
 
-        md.execute.map(_.toString).flatMap(cons.putStrLn)
-      }
+      md.execute
     }
   }.as(ExitCode.Success)
 }
 
 trait MyProgram[F[_]] {
-  def execute: F[List[String]]
+  def execute: F[Unit]
 }
 
-class IMSProgram[F[_]: Applicative](implicit read: ProgState.read[F], create: ProgState.create[F])
+class IMSProgram[F[_]: Monad: ConsoleOut](implicit read: ProgState.read[F], create: ProgState.create[F])
     extends MyProgram[F] {
 
-  override def execute: F[List[String]] = create.withCalcKey(_ + 1)("A").replicateA(5) *> read.all
+  override val execute: F[Unit] = create.withCalcKey(_ + 1)("A").replicateA(5) *>
+    (read.all product read.byKey(3)).map(_.toString).flatMap(ConsoleOut[F].putStrLn(_))
 }
 
 object IMSProgram {
